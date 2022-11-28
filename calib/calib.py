@@ -13,6 +13,19 @@ width, height = 11, 8
 square_size = 5
 criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
+color_list = [[255, 0, 0],
+                [255, 128, 0],
+                [255, 255, 0],
+                [128, 255, 0],
+                [0, 255, 0],
+                [0, 255, 128],
+                [0, 255, 255],
+                [0, 128, 255],
+                [0, 0, 255],
+                [128, 0, 255],
+                [255, 0, 255],
+                [255, 0, 128]]
+
 # convert 16bit to 8bit
 def convert_16bit_to_8bit(img):
     img = img.astype(np.float32)
@@ -150,7 +163,7 @@ def find_chessboard_corners_zivid(rgb, tlbr=None, preview_path="../data/ref", ra
 
     preview = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
     preview = cv2.resize(preview, (0, 0), fx=ratio, fy=ratio)
-    for i in trange(10):
+    for i in range(10):
         gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
         p1, p2 = cam1_p1[i]
         sub_gray = gray[p1[1]:p2[1], p1[0]:p2[0]]
@@ -163,7 +176,7 @@ def find_chessboard_corners_zivid(rgb, tlbr=None, preview_path="../data/ref", ra
             imgpoints1.append(corners2)
             cv2.drawChessboardCorners(preview, (width, height), corners2, ret)
         else:
-            print("not found")
+            print(f"Chessboard {i} not found")
 
     cv2.imwrite(os.path.join(preview_path, "cb", f"single1.jpg"), preview)
 
@@ -225,7 +238,7 @@ def find_chessboard_corners_fuji(rgb, tlbr=None, preview_path="../data/ref"):
 
     preview = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
 
-    for i in trange(10):
+    for i in range(10):
         gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
         p1, p2 = cam2_p1[i]
         sub_gray = gray[p1[1]:p2[1], p1[0]:p2[0]]
@@ -237,7 +250,7 @@ def find_chessboard_corners_fuji(rgb, tlbr=None, preview_path="../data/ref"):
             imgpoints2.append(corners2)
             cv2.drawChessboardCorners(preview, (width, height), corners2, ret)
         else:
-            print("not found")
+            print(f"Chessboard {i} not found")
 
     cv2.imwrite(os.path.join(preview_path, "cb", f"single2.jpg"), preview)
 
@@ -246,14 +259,14 @@ def find_chessboard_corners_fuji(rgb, tlbr=None, preview_path="../data/ref"):
 # Calibrate camera
 def calibrate_camera(objpoints1, imgpoints1, objpoints2, imgpoints2, path="../data"):
     ret1, mtx1, dist1, _, _ = cv2.calibrateCamera(objpoints1, imgpoints1, (11644, 8733), None, None)
-    print(f"ret1: {ret1}")
-    print(f"mtx1: {mtx1}")
-    print(f"dist1: {dist1}")
+    # print(f"ret1: {ret1}")
+    # print(f"mtx1: {mtx1}")
+    # print(f"dist1: {dist1}")
 
     ret2, mtx2, dist2, _, _ = cv2.calibrateCamera(objpoints2, imgpoints2, (11644, 8733), None, None)
-    print(f"ret2: {ret2}")
-    print(f"mtx2: {mtx2}")
-    print(f"dist2: {dist2}")
+    # print(f"ret2: {ret2}")
+    # print(f"mtx2: {mtx2}")
+    # print(f"dist2: {dist2}")
 
     if len(imgpoints1) != 10 or len(imgpoints2) != 10:
         raise ValueError("not enough images")
@@ -261,8 +274,8 @@ def calibrate_camera(objpoints1, imgpoints1, objpoints2, imgpoints2, path="../da
     retval, k1, d1, k2, d2, R, T, E, F = cv2.stereoCalibrate(objpoints1, imgpoints1, imgpoints2, mtx1, dist1, mtx2, dist2, (11644, 8733), flags=cv2.CALIB_FIX_INTRINSIC+cv2.CALIB_FIX_K3+cv2.CALIB_FIX_K4+cv2.CALIB_FIX_K5)
 
     print("retval", retval)
-    print("R", R)
-    print("T", T)
+    # print("R", R)
+    # print("T", T)
 
     data = {
         "k1": k1.tolist(),
@@ -277,3 +290,36 @@ def calibrate_camera(objpoints1, imgpoints1, objpoints2, imgpoints2, path="../da
 
     with open(os.path.join(path, "calib_result.yaml"), "w") as f:
         yaml.dump(data, f)
+    return retval, k1, d1, k2, d2, R, T
+
+# visualize calibration result
+def visualize_calibration_result(img1, img2, k1, d1, k2, d2, R, T, imgpoints1, imgpoints2, ratio=8733/1200):
+    img1_v = cv2.resize(img1, (0, 0), fx=ratio, fy=ratio)
+    # print(img1.shape, img2.shape)
+    img1_v = cv2.cvtColor(img1_v, cv2.COLOR_RGB2BGR)
+    img2_v = cv2.cvtColor(img2, cv2.COLOR_RGB2BGR)
+    # visualize stereo rectification result with 2 images on the same plane
+
+    R1, R2, P1, P2, Q, roi1, roi2 = cv2.stereoRectify(k1, d1, k2, d2, (11644, 8733), R, T, flags=cv2.CALIB_ZERO_DISPARITY)
+
+    map1x, map1y = cv2.initUndistortRectifyMap(k1, d1, R1, P1, (11644, 8733), cv2.CV_32FC1) 
+    map2x, map2y = cv2.initUndistortRectifyMap(k2, d2, R2, P2, (11644, 8733), cv2.CV_32FC1) 
+
+    img1_rect = cv2.remap(img1_v, map1x, map1y, cv2.INTER_LINEAR)
+    img2_rect = cv2.remap(img2_v, map2x, map2y, cv2.INTER_LINEAR)
+
+    vis = np.hstack((img1_rect, img2_rect))
+
+    # draw lines between imgpoints1 and imgpoints2 on the combined rectified images
+    for i in range(len(imgpoints1)):
+        for j in range(len(imgpoints1[i])):
+            pt1_rect = cv2.undistortPoints(imgpoints1[i][j].reshape(1, 1, 2), k1, d1, R=R1, P=P1)
+            pt2_rect = cv2.undistortPoints(imgpoints2[i][j].reshape(1, 1, 2), k2, d2, R=R2, P=P2)
+            pt1_rect = pt1_rect.reshape(2)
+            pt2_rect = pt2_rect.reshape(2)
+            pt2_rect[0] += img1_rect.shape[1]
+            pt1_rect = tuple(pt1_rect.astype(np.int32))
+            pt2_rect = tuple(pt2_rect.astype(np.int32))
+            cv2.line(vis, pt1_rect, pt2_rect, color_list[i], 2)
+
+    return vis
